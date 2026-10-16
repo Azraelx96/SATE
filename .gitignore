@@ -6,3 +6,9 @@ venv/
 .venv/
 .DS_Store
 *.py[cod]
+datos/sate.db
+# Bases de datos SQLite
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
