@@ -6,11 +6,13 @@ Prototipo de sistema de alerta temprana que identifica estudiantes en riesgo de 
 
 ## Qué hace
 
+- **Carga dinámica de datos:** se puede subir un archivo CSV o Excel del instituto aunque sus columnas se llamen distinto. La app sugiere sola a qué dato corresponde cada columna (con una IA opcional que mejora la sugerencia) y una persona lo confirma antes de calcular.
+- Revisa la calidad de los datos y avisa de lo que no pudo interpretar (valores inválidos, filas repetidas, asistencia expresada de 0 a 1, etc.). Lo que no se puede interpretar se deja vacío: nunca se inventan valores.
 - Calcula un **nivel de riesgo** (Bajo, Medio, Alto) para cada estudiante mediante reglas explícitas.
-- Muestra un **panel del curso** ordenado de mayor a menor riesgo, con filtro por nivel.
-- Muestra una **ficha por estudiante** que explica qué reglas se activaron y por qué.
+- Muestra un **panel del curso** ordenado de mayor a menor riesgo, con filtro por nivel, y una **ficha por estudiante** que explica qué reglas se activaron y por qué.
+- Genera un **resumen para autoridades** con cifras agregadas (redactable con IA) y permite descargar los resultados en CSV.
 - Permite activar o desactivar reglas desde el panel lateral, para adaptarlo a cada instituto.
-- Identifica a los estudiantes por **código** (A001, A002…), sin nombres.
+- Identifica a los estudiantes por **código**; solo conserva las columnas necesarias y no usa columnas con nombres o DNI.
 
 Las alertas son una ayuda para priorizar a quién contactar. La decisión siempre es del tutor.
 
@@ -39,9 +41,14 @@ Los umbrales y puntos son valores iniciales y **no están validados**: deben aju
 
 ## Rol de la inteligencia artificial
 
-El nivel de riesgo **lo calculan las reglas, no la IA**. La IA (Claude, vía API de Anthropic) está prevista como asistente que, a partir de un resultado ya calculado, redacte un resumen y sugerencias de acompañamiento para el tutor (historia de usuario HU-06). A la IA se le enviará únicamente el código del estudiante y los factores de riesgo, nunca el nombre real. Si el servicio de IA falla, el panel sigue funcionando completo.
+El nivel de riesgo **lo calculan las reglas, no la IA**: así el resultado es reproducible y cada alerta tiene una razón verificable. La IA (Claude, vía API de Anthropic) se usa para tareas de apoyo, y es opcional:
 
-**Estado actual:** la conexión con la IA todavía no está implementada; el botón correspondiente está deshabilitado.
+- **Reconocer las columnas del archivo** de cada instituto. Se envían a la IA **solo los nombres de las columnas**, nunca los datos de los estudiantes.
+- **Redactar el resumen para autoridades.** Se envían **solo cifras agregadas** del curso, sin códigos ni datos individuales.
+
+Sin clave de API, el mapeo automático básico, el cálculo y el resumen numérico funcionan igual. Para activar la IA, copiá `.env.example` como `.env` y pegá tu clave en `ANTHROPIC_API_KEY` (la clave se crea en la consola de la API de Anthropic, es aparte de la cuenta de claude.ai y puede requerir crédito).
+
+**Pendiente:** la orientación individual para el tutor (historia HU-06) todavía no está implementada; el botón correspondiente está deshabilitado.
 
 ## Requisitos
 
@@ -78,19 +85,21 @@ Solo el cálculo de riesgo, por terminal:
 
 ```
 SATE/
-├── app.py                         # Interfaz (Streamlit): panel y ficha
+├── app.py                         # Interfaz: carga, panel, ficha y resumen
+├── carga.py                       # Lectura, mapeo de columnas y limpieza de datos
 ├── reglas.py                      # Motor de reglas de riesgo
-├── datos/
-│   └── alumnos_ficticios.csv      # 16 estudiantes inventados
+├── ia.py                          # Funciones de IA (mapeo de columnas y resumen)
+├── resumen.py                     # Cifras agregadas y exportación de resultados
+├── datos/alumnos_ficticios.csv    # 16 estudiantes inventados (datos de ejemplo)
 ├── requirements.txt               # Librerías
 ├── .env.example                   # Modelo del archivo de clave de API
-└── .gitignore
+└── README.md
 ```
 
 ## Personalizar
 
 - **Reglas:** la lista `REGLAS` está al comienzo de `reglas.py` (umbrales, puntos, dimensión y si son críticas).
-- **Estudiantes:** una fila por estudiante en `datos/alumnos_ficticios.csv`. Código único, punto decimal (`7.5`, no `7,5`) y espacio vacío para datos faltantes. Columnas: `codigo, asistencia_pct, promedio, entregas_sin_presentar, preocupacion_tutor, materias_desaprobadas, evaluaciones_ausente, llegadas_tarde, inasistencias_consecutivas, dias_sin_actividad, variacion_asistencia, variacion_promedio, materias_recursadas`.
+- **Datos propios:** en la app, pestaña «Cargar datos» → «Subir mi archivo». Si preferís cambiar los datos de ejemplo, editá `datos/alumnos_ficticios.csv`: una fila por estudiante en `datos/alumnos_ficticios.csv`. Código único, punto decimal (`7.5`, no `7,5`) y espacio vacío para datos faltantes. Columnas: `codigo, asistencia_pct, promedio, entregas_sin_presentar, preocupacion_tutor, materias_desaprobadas, evaluaciones_ausente, llegadas_tarde, inasistencias_consecutivas, dias_sin_actividad, variacion_asistencia, variacion_promedio, materias_recursadas`.
 
 ## Privacidad
 
@@ -105,7 +114,7 @@ Este proyecto se desarrolló con asistencia de **Claude** (Anthropic), usado en 
 
 ## Próximos pasos
 
-- Conectar la IA para generar orientación al tutor (HU-06).
+- Orientación individual generada por IA para el tutor (HU-06).
 - Registrar intervenciones de acompañamiento (HU-08).
-- Carga de datos por parte de los docentes (HU-01).
+- Formulario de carga para docentes, con usuarios y roles (HU-01).
 - Validar los umbrales con el tutor del curso y con datos reales.
