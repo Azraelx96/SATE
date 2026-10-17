@@ -1,6 +1,7 @@
 """SATE — Sistema de Alerta Temprana de Abandono. Ejecutar con: streamlit run app.py"""
 import pandas as pd
 import streamlit as st
+import almacenamiento
 
 import carga
 import ia
@@ -8,6 +9,7 @@ import resumen
 from reglas import (calcular_curso, copiar_reglas, INDICE_MEDIO, INDICE_ALTO, ESCALAMIENTO_DIMENSIONES)
 
 st.set_page_config(page_title="SATE", page_icon="📋", layout="wide")
+almacenamiento.inicializar_bd()
 st.title("SATE — Sistema de Alerta Temprana de Abandono")
 st.caption("Prototipo. Las alertas son una ayuda para el tutor, no una decisión. "
            "El nivel de riesgo lo calculan reglas explicables; la IA no lo decide.")

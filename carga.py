@@ -60,6 +60,36 @@ def columnas_personales(columnas):
     """Columnas cuyo nombre sugiere datos personales (nombre, DNI, mail...)."""
     return [c for c in columnas if any(p in normalizar(c) for p in PALABRAS_PERSONALES)]
 
+def detectar_columnas_identidad(columnas):
+    """
+    Detecta columnas personales para identificar alumnos internamente.
+    Estas columnas no se incorporan a los datos académicos.
+    """
+    resultado = {
+        "dni": None,
+        "nombre": None,
+        "apellido": None,
+    }
+
+    for columna in columnas:
+        nombre_normalizado = normalizar(columna)
+
+        if resultado["dni"] is None and (
+            nombre_normalizado in {"dni", "documento", "numerodedocumento"}
+        ):
+            resultado["dni"] = columna
+
+        elif resultado["nombre"] is None and nombre_normalizado in {
+            "nombre", "nombres", "nombrecompleto"
+        }:
+            resultado["nombre"] = columna
+
+        elif resultado["apellido"] is None and nombre_normalizado in {
+            "apellido", "apellidos"
+        }:
+            resultado["apellido"] = columna
+
+    return resultado
 
 def sugerir_mapeo(columnas):
     """Sugerencia automática sin IA: {campo: columna del archivo o None}."""
