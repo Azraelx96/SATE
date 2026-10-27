@@ -63,33 +63,32 @@ def columnas_personales(columnas):
 def detectar_columnas_identidad(columnas):
     """
     Detecta columnas personales para identificar alumnos internamente.
-    Estas columnas no se incorporan a los datos académicos.
+    Estas columnas no entran al cálculo del riesgo.
+
+    Devuelve las claves: dni, nombre, apellido y nombre_completo (para columnas
+    como «Apellido y Nombre», donde ambos datos vienen juntos).
     """
-    resultado = {
-        "dni": None,
-        "nombre": None,
-        "apellido": None,
+    resultado = {"dni": None, "nombre": None, "apellido": None, "nombre_completo": None}
+
+    nombres_completos = {
+        "apellidoynombre", "apellidoynombres", "apellidosynombres", "apellidosynombre",
+        "nombreyapellido", "nombresyapellidos", "apellidonombre", "nombrecompleto",
     }
 
     for columna in columnas:
-        nombre_normalizado = normalizar(columna)
+        n = normalizar(columna)
 
-        if resultado["dni"] is None and (
-            nombre_normalizado in {"dni", "documento", "numerodedocumento"}
-        ):
+        if resultado["dni"] is None and (n in {"documento", "numerodedocumento"} or "dni" in n):
             resultado["dni"] = columna
-
-        elif resultado["nombre"] is None and nombre_normalizado in {
-            "nombre", "nombres", "nombrecompleto"
-        }:
+        elif resultado["nombre_completo"] is None and n in nombres_completos:
+            resultado["nombre_completo"] = columna
+        elif resultado["nombre"] is None and n in {"nombre", "nombres"}:
             resultado["nombre"] = columna
-
-        elif resultado["apellido"] is None and nombre_normalizado in {
-            "apellido", "apellidos"
-        }:
+        elif resultado["apellido"] is None and n in {"apellido", "apellidos"}:
             resultado["apellido"] = columna
 
     return resultado
+
 
 def sugerir_mapeo(columnas):
     """Sugerencia automática sin IA: {campo: columna del archivo o None}."""
@@ -175,7 +174,7 @@ def _validar_rango(campo, valores, col, avisos):
     return valores
 
 
-def limpiar(crudo, mapeo, generar_codigos=False):
+def _limpiar_base(crudo, mapeo, generar_codigos=False):
     """Devuelve (DataFrame limpio, lista de avisos).
 
     Solo conserva las columnas mapeadas (minimización de datos). Lo que no se
@@ -213,4 +212,48 @@ def limpiar(crudo, mapeo, generar_codigos=False):
             avisos.append(f"«{col}» no tiene valores válidos y se omitió: su regla no se aplicará.")
             continue
         out[campo] = valores
-    return out.reset_index(drop=True), avisos
+    return out.reset_index(drop=True), avisos, list(crudo.index)
+
+
+def limpiar(crudo, mapeo, generar_codigos=False):
+    """Devuelve (DataFrame limpio, lista de avisos). Ver _limpiar_base."""
+    out, avisos, _ = _limpiar_base(crudo, mapeo, generar_codigos)
+    return out, avisos
+
+
+def _valor(fila, columna):
+    """Valor de una celda, o None si la columna no existe o la celda está vacía."""
+    if columna is None:
+        return None
+    v = fila[columna]
+    return None if pd.isna(v) else v
+
+
+def limpiar_con_identidades(crudo, mapeo, generar_codigos=False):
+    """
+    Igual que limpiar(), pero además devuelve la identidad de cada estudiante.
+
+    Devuelve (DataFrame limpio, avisos, identidades). `identidades` es una lista
+    alineada fila por fila con el DataFrame limpio: cada elemento es un diccionario
+    con codigo_origen, dni, nombre y apellido, listo para
+    almacenamiento.sincronizar_alumnos(). El DNI y el nombre salen de las columnas
+    personales del archivo original; no pasan al DataFrame de datos.
+    """
+    out, avisos, filas = _limpiar_base(crudo, mapeo, generar_codigos)
+    ident = detectar_columnas_identidad(crudo.columns)
+
+    identidades = []
+    for codigo, indice in zip(out["codigo"], filas):
+        fila = crudo.loc[indice]
+        nombre = _valor(fila, ident["nombre"])
+        apellido = _valor(fila, ident["apellido"])
+        if nombre is None and apellido is None:
+            nombre = _valor(fila, ident["nombre_completo"])
+        identidades.append({
+            "codigo_origen": codigo,
+            "dni": _valor(fila, ident["dni"]),
+            "nombre": nombre,
+            "apellido": apellido,
+        })
+
+    return out, avisos, identidades
