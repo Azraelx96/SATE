@@ -1,4 +1,5 @@
 """SATE — Sistema de Alerta Temprana de Abandono. Ejecutar con: streamlit run app.py"""
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -7,6 +8,7 @@ import almacenamiento
 
 import carga
 import ia
+import orientacion
 import resumen
 from reglas import (calcular_curso, copiar_reglas, INDICE_MEDIO, INDICE_ALTO, ESCALAMIENTO_DIMENSIONES)
 
@@ -19,6 +21,14 @@ st.caption("Prototipo. Las alertas son una ayuda para el tutor, no una decisión
 COLORES = {"Alto": "🔴", "Medio": "🟡", "Bajo": "🟢", "Sin datos suficientes": "⚪"}
 ORDEN = {"Alto": 0, "Medio": 1, "Bajo": 2, "Sin datos suficientes": 3}
 NINGUNA, AUTO = "(no disponible)", "(generar códigos automáticos)"
+
+
+@st.cache_data(ttl=10, show_spinner=False)
+def ia_lista():
+    """¿Ollama responde y el modelo está instalado? Se recuerda 10 segundos."""
+    return ia.disponible()
+
+
 ORIGEN_EJEMPLO = ""  # los datos de ejemplo usan el origen vacío (mantiene los legajos ya creados)
 
 
@@ -86,9 +96,9 @@ def paso_carga(archivo):
     st.markdown("#### Relacioná las columnas de tu archivo con los datos del sistema")
     c1, c2 = st.columns([3, 2])
     with c2:
-        st.button("✨ Sugerir con IA", on_click=cb_ia, args=(columnas,), disabled=not ia.disponible())
+        st.button("✨ Sugerir con IA", on_click=cb_ia, args=(columnas,), disabled=not ia_lista())
         st.caption("Se envían a la IA solo los **nombres de las columnas**, nunca los datos de los estudiantes."
-                   if ia.disponible() else
+                   if ia_lista() else
                    "Ollama no está disponible o el modelo configurado no está instalado. "
                     "Podés continuar utilizando el mapeo automático básico.")
         if "ia_msg" in st.session_state:
@@ -247,6 +257,41 @@ with tab_panel:
         if not fila["factores"] and fila["nivel"] == "Bajo":
             st.write("Ninguna regla se activó.")
 
+        # --- Orientación para la tutoría con IA (HU-06) ---
+        st.markdown("#### 🤖 Orientación para la tutoría (IA)")
+        puede_orientar = fila["nivel"] in ("Alto", "Medio")
+        clave_orient = f"orient_{legajo}_{fila['nivel']}_{fila['indice']}"
+        if st.button("✨ Generar orientación para la tutoría", key=f"btn_orient_{legajo}",
+                     disabled=not (puede_orientar and ia_lista())):
+            paquete = orientacion.armar_paquete(fila, reglas)
+            try:
+                inicio = time.time()
+                with st.spinner("Generando orientación... puede tardar según el modelo."):
+                    texto_ia = ia.devolucion(paquete)
+                st.session_state[clave_orient] = {
+                    "texto": texto_ia.strip(),
+                    "avisos": orientacion.revisar_texto(texto_ia, paquete),
+                    "modelo": ia.MODELO,
+                    "segundos": time.time() - inicio,
+                }
+            except Exception as e:  # noqa: BLE001
+                st.session_state.pop(clave_orient, None)
+                st.error(f"No se pudo generar la orientación: {e} El desglose de arriba sigue siendo válido.")
+        if not puede_orientar:
+            st.caption("Disponible para estudiantes con nivel Medio o Alto.")
+        elif not ia_lista():
+            st.caption("IA no disponible: iniciá Ollama y verificá que el modelo configurado esté instalado.")
+        else:
+            st.caption("Se envían al modelo el nivel, el índice y los factores de riesgo. No se envían nombre, "
+                       "DNI, legajo ni observaciones. Se procesa en tu equipo con Ollama.")
+        resultado_ia = st.session_state.get(clave_orient)
+        if resultado_ia:
+            st.markdown(resultado_ia["texto"])
+            for aviso in resultado_ia["avisos"]:
+                st.warning(aviso)
+            st.info("Sugerencia generada por IA: la decisión final es del tutor. Revisala antes de usarla.")
+            st.caption(f"Modelo: {resultado_ia['modelo']} · {resultado_ia['segundos']:.0f} s")
+
         # --- Observaciones del docente (se guardan por legajo en la base de datos) ---
         st.markdown("#### 📝 Observaciones del docente")
         mensaje = st.session_state.pop("flash_obs", None)
@@ -275,7 +320,6 @@ with tab_panel:
             except ValueError as e:
                 st.error(str(e))
 
-        st.button("Generar orientación IA para este estudiante (próximamente)", disabled=True)
     else:
         st.info("No hay estudiantes en este nivel.")
 
@@ -286,7 +330,7 @@ with tab_resumen:
     st.warning("El archivo descargado contiene el nivel de riesgo de cada código: tratalo como información sensible.")
 
     st.markdown("#### Redacción con IA")
-    if ia.disponible():
+    if ia_lista():
         st.caption("Se envían a la IA solo las cifras agregadas de arriba, sin códigos ni datos individuales.")
         if st.button("✨ Redactar resumen con IA"):
             try:

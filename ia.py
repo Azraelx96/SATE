@@ -28,19 +28,26 @@ MODELO = os.getenv(
 
 
 SYSTEM_DEVOLUCION = """
-Sos un asistente de apoyo docente del sistema SATE.
+Sos un asistente de apoyo del sistema SATE. Escribís para el TUTOR (docente) del
+instituto, no para el estudiante: hablá del estudiante en tercera persona.
 
-Tu tarea es redactar una orientación breve, respetuosa y útil
-para acompañar la trayectoria educativa de un estudiante.
+Recibirás un resultado ya calculado por el sistema, con estos campos:
+- nivel e indice: resumen del riesgo (no menciones el índice como número).
+- dimensiones_con_alerta y factores_de_riesgo: lo que motivó la alerta.
+- dimensiones_sin_alerta: aspectos evaluados que no presentan problemas.
+- nota_del_sistema: aclaración opcional.
+
+Tu tarea es redactar una orientación breve, respetuosa y útil para que el tutor
+prepare el acompañamiento.
 
 Reglas obligatorias:
-- Escribí en español rioplatense.
-- Usá entre 3 y 4 oraciones.
-- Mencioná una fortaleza únicamente si los datos la respaldan.
-- Indicá un aspecto que conviene acompañar.
-- Proponé una acción concreta y realista.
-- No inventes datos, causas ni circunstancias personales.
-- No realices diagnósticos.
+- Escribí en español rioplatense, en 3 o 4 oraciones, sin listas ni títulos.
+- Mencioná una fortaleza solo si surge de dimensiones_sin_alerta; si no hay, omitila.
+- Indicá un aspecto que conviene acompañar, basado en los factores_de_riesgo.
+- Proponé una acción concreta y realista para la próxima conversación o semana.
+- Usá solamente los datos recibidos: no inventes datos, cifras, causas ni
+  circunstancias personales.
+- No realices diagnósticos ni supongas los motivos de lo que ocurre.
 - No presentes el nivel de riesgo como una certeza.
 - No modifiques el nivel de riesgo calculado por las reglas.
 - No sugieras sanciones ni medidas discriminatorias.
@@ -83,7 +90,7 @@ Reglas obligatorias:
 
 def _cliente():
     """Crea un cliente de Ollama con la dirección configurada."""
-    return ollama.Client(host=OLLAMA_HOST)
+    return ollama.Client(host=OLLAMA_HOST, timeout=120)
 
 
 def disponible():
@@ -93,28 +100,20 @@ def disponible():
     Devuelve True si ambas condiciones se cumplen.
     """
     try:
-        cliente = _cliente()
-        respuesta = cliente.list()
-        # La biblioteca de Ollama devuelve un objeto ListResponse.
-        # Accedemos a su atributo models
-        modelos = respuesta.models
-
+        respuesta = _cliente().list()
         nombres = set()
 
-        for modelo in modelos:
-            nombre = (
-                getattr(modelo, "model", None) 
-                or getattr(modelo, "name", None)
-                )
-            
-        if nombre:
-                    nombres.add(nombre)
+        for modelo in respuesta.models:
+            nombre = getattr(modelo, "model", None) or getattr(modelo, "name", None)
+            if nombre:  # dentro del for: se registran TODOS los modelos instalados
+                nombres.add(nombre)
+                nombres.add(nombre.split(":")[0])  # permite configurar "qwen2.5" sin etiqueta
 
         return MODELO in nombres
 
-    except Exception as error: 
-        print(f"Error al comprobar Ollama: {error}") 
-    return False
+    except Exception as error:
+        print(f"Error al comprobar Ollama: {error}")
+        return False
 
 
 def _llamar(sistema, usuario, options=None):
