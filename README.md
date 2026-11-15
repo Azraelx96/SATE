@@ -40,16 +40,21 @@ Todo esto depende de que la institución autorice el acceso a sus datos y de que
 - **Observaciones del docente:** una caja de texto y un check de preocupación en cada ficha, guardados en una base de datos local. La preocupación guardada **alimenta la regla R12** del semáforo.
 - **Resumen para autoridades** con cifras agregadas (redactable con IA) y descarga de resultados en CSV.
 - **Reglas activables:** desde el panel lateral se desactivan las reglas que el instituto no usa.
+- **Orientación para la tutoría con IA local:** botón en la ficha de cada estudiante con nivel Medio o Alto (ver la sección siguiente).
 
-## Botón «Generar orientación para la tutoría» (pendiente)
+## Botón «Generar orientación para la tutoría»
 
-Hoy el botón aparece en la ficha pero está **deshabilitado**; la función que redacta el texto existe en `ia.py` y falta conectarla.
+El botón está **conectado** en la ficha del estudiante y usa la IA local (Ollama). Solo se habilita para estudiantes con nivel **Medio** o **Alto**; con nivel Bajo o con datos insuficientes permanece deshabilitado.
 
-Está pensado como una herramienta para el **tutor**, no para el estudiante: al revisar a alguien con nivel Medio o Alto, el modelo de IA local redacta una orientación breve (una fortaleza si los datos la respaldan, un aspecto a acompañar y una acción concreta) para ayudar a preparar la entrevista.
+Es una herramienta para el **tutor**, no para el estudiante: el modelo redacta una orientación breve (una fortaleza si los datos la respaldan, un aspecto a acompañar y una acción concreta) para ayudar a preparar la entrevista.
 
-- Recibe el nivel, el índice y los factores de riesgo. **No recibe nombre ni DNI.**
-- Se muestra con la leyenda «sugerencia generada por IA: la decisión final es del tutor».
+- Recibe el nivel, el índice y los factores de riesgo. **No recibe nombre, DNI, legajo ni el contenido de las observaciones.**
+- `orientacion.py` arma lo que se envía al modelo y revisa lo que responde (sanciones, diagnósticos, certezas o cifras inventadas).
+- Espera hasta 120 segundos la respuesta del modelo.
+- Se muestra con la leyenda «Sugerencia generada por IA. La decisión final corresponde al tutor.»
 - **No** conversa con el estudiante, **no** cambia el nivel de riesgo, **no** diagnostica y **no** propone sanciones.
+- Si el modelo no está disponible, el semáforo y el desglose de reglas siguen funcionando.
+- La calidad de los textos depende del modelo y de la computadora: se evalúa con `probar_orientacion.py` (ver la sección «Pruebas»).
 
 ## Cómo calcula el riesgo
 
@@ -78,7 +83,7 @@ El nivel de riesgo **lo calculan las reglas, no la IA**: así el resultado es re
 
 - **Reconocer las columnas** del archivo. Recibe solo los nombres de las columnas, nunca datos de estudiantes.
 - **Redactar el resumen para autoridades.** Recibe solo cifras agregadas.
-- *(Pendiente)* **Orientación para la tutoría**, descrita arriba.
+- **Orientación para la tutoría**, descrita arriba. Recibe el nivel, el índice y los factores de riesgo, sin datos que identifiquen a la persona.
 
 **Configuración:**
 
@@ -90,6 +95,8 @@ El nivel de riesgo **lo calculan las reglas, no la IA**: así el resultado es re
 OLLAMA_HOST=http://localhost:11434
 OLLAMA_MODEL=qwen2.5:7b
 ```
+
+Ollama y el modelo `qwen2.5:7b` se eligieron por recomendación de ChatGPT y de Claude.
 
 Sin Ollama, el reconocimiento básico de columnas, el cálculo del semáforo y el resumen numérico funcionan igual. Los modelos livianos pueden redactar en español con menos calidad y equivocarse, por eso **todo texto generado debe ser revisado por una persona**.
 
@@ -110,6 +117,8 @@ Los datos académicos (asistencia, notas, entregas) **no se guardan**: se leen d
 - Python 3.13 (se recomienda esta versión; con versiones muy nuevas algunas librerías pueden no tener instalador disponible).
 - Git.
 - Ollama (opcional, solo para las funciones de IA).
+
+El detalle de los requisitos de la computadora, incluida la IA local, está en `REQUISITOS_INSTALACION_SATE.txt`.
 
 ## Instalación (Windows)
 
@@ -143,12 +152,15 @@ SATE/
 ├── carga.py                       # Lectura, mapeo de columnas, limpieza e identidades
 ├── reglas.py                      # Motor de reglas de riesgo
 ├── almacenamiento.py              # Base de datos: legajos y observaciones
-├── ia.py                          # IA local con Ollama (mapeo y resumen)
+├── ia.py                          # IA local con Ollama (mapeo, resumen y orientación)
+├── orientacion.py                 # Qué se envía al modelo y revisión del texto que devuelve
 ├── resumen.py                     # Cifras agregadas y exportación de resultados
+├── probar_orientacion.py          # Evaluación de la calidad del modelo en tu equipo
 ├── iniciar_sate.bat               # Inicia la aplicación con doble clic
 ├── datos/alumnos_ficticios.csv    # 16 estudiantes inventados (datos de ejemplo)
 ├── requirements.txt               # Librerías
 ├── .env.example                   # Modelo de configuración
+├── REQUISITOS_INSTALACION_SATE.txt # Requisitos e instalación paso a paso
 └── README.md
 ```
 
@@ -172,15 +184,20 @@ SATE/
 
 ## Pruebas
 
-El motor de reglas, la carga de archivos, la base de datos y la interfaz se probaron en un entorno de ejecución con herramientas automáticas, incluida una copia de la base real. Las funciones de IA se probaron **solo con un servidor Ollama simulado, no con un modelo real**. Estas pruebas verifican que el sistema es coherente y explicable; no miden la capacidad real de detectar abandono, que requiere comparar las alertas con casos reales.
+El motor de reglas, la carga de archivos, la base de datos y la interfaz se probaron en un entorno de ejecución con herramientas automáticas, incluida una copia de la base real. Las funciones de IA, incluida la orientación para la tutoría, se probaron en ese entorno **solo con un servidor Ollama simulado, no con un modelo real**. La calidad de los textos del modelo real se evalúa en la computadora de cada equipo con `.venv\Scripts\python probar_orientacion.py`. Estas pruebas verifican que el sistema es coherente y explicable; no miden la capacidad real de detectar abandono, que requiere comparar las alertas con casos reales.
 
 ## Uso de IA en el desarrollo
 
-Este proyecto se desarrolló con asistencia de **Claude** (Anthropic), usado en la planificación, la redacción de historias de usuario, el diseño técnico, la generación y revisión del código y de la documentación. El equipo revisa y ajusta el material generado. El detalle está en la documentación del proyecto.
+Este proyecto se desarrolló con asistencia de dos herramientas de IA:
+
+- **Claude** (Anthropic, Sonnet 5.5): planificación, historias de usuario, diseño técnico, generación y revisión del código, pruebas y documentación. Modificó varias veces `ia.py` y conectó el botón de orientación para la tutoría.
+- **ChatGPT** (OpenAI, GPT-5.6): primera versión de la base de datos (`almacenamiento.py`) y de `ia.py`.
+
+El equipo revisa y ajusta el material generado. El detalle está en la documentación del proyecto.
 
 ## Próximos pasos
 
-- Conectar el botón de orientación para la tutoría con la IA local.
+- Evaluar con un tutor la calidad de las orientaciones generadas por la IA local.
 - Historial de intervenciones con tipo de contacto y fecha (hoy hay una observación por estudiante).
 - Inicio de sesión, roles y registro de accesos.
 - Conexión con la base de datos del instituto, si lo permite su sistema.
