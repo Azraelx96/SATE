@@ -41,7 +41,8 @@ def aplicar_mapeo(mapeo, columnas):
 
 def cb_ia(columnas):
     try:
-        aplicar_mapeo(ia.sugerir_mapeo(columnas, carga.CAMPOS), columnas)
+        todas = st.session_state.get("columnas_archivo", columnas)
+        aplicar_mapeo(ia.sugerir_mapeo(columnas, carga.CAMPOS), todas)
         st.session_state["ia_msg"] = ("ok", "La IA sugirió el mapeo. Revisalo antes de continuar.")
     except Exception as e:  # noqa: BLE001
         st.session_state["ia_msg"] = ("error", f"No se pudo usar la IA: {e}")
@@ -75,28 +76,65 @@ def preparar_datos(datos, identidades, grupo):
 
 def paso_carga(archivo):
     """Lee el archivo, deja confirmar el mapeo de columnas y devuelve los datos limpios."""
+    base = f"{archivo.name}-{archivo.size}"
     try:
-        crudo = carga.leer_archivo(archivo)
+        hojas = carga.listar_hojas(archivo)
+        hoja = None
+        if len(hojas) > 1:
+            clave_hoja = f"hoja_{base}"
+            if clave_hoja not in st.session_state:
+                st.session_state[clave_hoja] = carga.elegir_hoja(archivo)
+            hoja = st.selectbox("Hoja del Excel que tiene los datos", hojas, key=clave_hoja,
+                                help="Se eligió sola la hoja que más se parece a una lista de estudiantes.")
+        clave_fila = f"fila_{base}_{hoja}"
+        fila_manual = st.session_state.get(clave_fila)
+        lectura = carga.leer_tabla(archivo, hoja=hoja, fila_encabezado=fila_manual)
     except Exception as e:  # noqa: BLE001
         st.error(f"No se pudo leer el archivo: {e}")
         return None
+    crudo = lectura["df"]
+
+    # Punto 5: vista previa del archivo tal cual, para corregir la fila de encabezados.
+    with st.expander(f"Vista previa del archivo original · encabezados en la fila {lectura['fila_encabezado']}",
+                     expanded=lectura["fila_encabezado"] > 1 or len(crudo.columns) < 3):
+        previa = lectura["grilla"].head(12).copy()
+        previa.index = range(1, len(previa) + 1)
+        previa.columns = [carga._letra(i) for i in range(previa.shape[1])]
+        st.dataframe(previa.astype(str).replace({"None": ""}), width="stretch")
+        st.number_input("¿En qué fila están los nombres de las columnas?", min_value=1,
+                        max_value=max(1, len(lectura["grilla"])), value=lectura["fila_encabezado"], step=1,
+                        key=clave_fila,
+                        help=f"Detectada automáticamente: fila {lectura['detectada']}. Cambiala si no es correcta.")
+
     columnas = list(crudo.columns)
-    firma = f"{archivo.name}-{archivo.size}"
+    st.session_state["columnas_archivo"] = columnas
+    firma = f"{base}-{lectura['hoja']}-{lectura['fila_encabezado']}"
     if st.session_state.get("firma") != firma or "map_codigo" not in st.session_state:
         st.session_state["firma"] = firma
         st.session_state.pop("ia_msg", None)
         aplicar_mapeo(carga.sugerir_mapeo(columnas), columnas)
 
     st.success(f"Archivo leído: {len(crudo)} filas y {len(columnas)} columnas.")
+    for aviso in lectura["avisos"]:
+        st.caption("ℹ️ " + aviso)
     personales = carga.columnas_personales(columnas)
     if personales:
         st.warning("Estas columnas parecen datos personales: se usan solo para reconocer a cada estudiante "
                    "(legajo) y **no entran al cálculo del riesgo**: " + ", ".join(personales))
+    candidatas_ia = [c for c in columnas if c not in lectura["calculadas"]]
 
     st.markdown("#### Relacioná las columnas de tu archivo con los datos del sistema")
     c1, c2 = st.columns([3, 2])
     with c2:
-        st.button("✨ Sugerir con IA", on_click=cb_ia, args=(columnas,), disabled=not ia_lista())
+        asignadas = {st.session_state.get(f"map_{k}") for k in carga.CAMPOS}
+        sueltas = [c for c in candidatas_ia if c not in asignadas and c not in personales]
+        if sueltas:  # Punto 8: la IA como respaldo cuando las reglas no alcanzan
+            st.info("Columnas sin asignar: " + ", ".join(f"«{c}»" for c in sueltas)
+                    + ". Si alguna es un dato del sistema, probá «Sugerir con IA» o asignala a mano.")
+        st.button("✨ Sugerir con IA", on_click=cb_ia, args=(candidatas_ia,), disabled=not ia_lista())
+        if not ia_lista() and st.button("🔄 Volver a comprobar la IA"):
+            ia_lista.clear()
+            st.rerun()
         st.caption("Se envían a la IA solo los **nombres de las columnas**, nunca los datos de los estudiantes."
                    if ia_lista() else
                    "Ollama no está disponible o el modelo configurado no está instalado. "
@@ -108,6 +146,8 @@ def paso_carga(archivo):
         st.caption("Dejá en «(no disponible)» lo que tu instituto no registra: esa regla simplemente no se aplica.")
         for campo, desc in carga.CAMPOS.items():
             opciones = ([AUTO] if campo == "codigo" else [NINGUNA]) + columnas
+            if st.session_state.get(f"map_{campo}") not in opciones:  # evita el error si cambió el archivo
+                st.session_state[f"map_{campo}"] = opciones[0]
             st.selectbox(desc, opciones, key=f"map_{campo}")
 
     elegido = {campo: st.session_state[f"map_{campo}"] for campo in carga.CAMPOS}
@@ -152,7 +192,7 @@ with tab_datos:
         st.caption("Idealmente el archivo ya viene con un código o legajo en lugar de nombres. "
                    "Los datos académicos se procesan en memoria. En la base local (datos/sate.db) se guardan "
                    "el legajo de cada estudiante, su DNI y nombre si vienen en el archivo, y las observaciones que escribas.")
-        archivo = st.file_uploader("Archivo .csv o .xlsx", type=["csv", "xlsx"])
+        archivo = st.file_uploader("Archivo .csv, .xlsx, .xlsm o .xls", type=["csv", "xlsx", "xlsm", "xls"])
         if archivo is not None:
             resultado = paso_carga(archivo)
             if resultado is not None:

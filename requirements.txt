@@ -4,3 +4,4 @@ openpyxl
 anthropic
 python-dotenv
 ollama
+xlrd
