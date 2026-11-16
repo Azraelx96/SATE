@@ -1,0 +1,5 @@
+# Archivos que generan las pruebas y no hace falta subir a GitHub
+.pytest_cache/
+.coverage
+informe_cobertura/
+__pycache__/
